@@ -36,8 +36,14 @@
 #include <typeinfo>
 #include <cstring>
 #include <algorithm>
+#ifndef _MSC_VER
 #include <cxxabi.h>
+#endif
 #include <cstdlib>
+
+#ifdef max
+#undef max
+#endif
 
 namespace cmdline{
 
@@ -102,13 +108,18 @@ Target lexical_cast(const Source &arg)
   return lexical_cast_t<Target, Source, detail::is_same<Target, Source>::value>::cast(arg);
 }
 
+
 static inline std::string demangle(const std::string &name)
 {
+#ifndef _MSC_VER
   int status=0;
   char *p=abi::__cxa_demangle(name.c_str(), 0, 0, &status);
   std::string ret(p);
   free(p);
   return ret;
+#else
+  return name;
+#endif
 }
 
 template <class T>

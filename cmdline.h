@@ -41,10 +41,6 @@
 #endif
 #include <cstdlib>
 
-#ifdef max
-#undef max
-#endif
-
 namespace cmdline{
 
 namespace detail{
@@ -577,7 +573,7 @@ public:
 
     size_t max_width=0;
     for (size_t i=0; i<ordered.size(); i++){
-      max_width=std::max(max_width, ordered[i]->name().length());
+      max_width=(std::max)(max_width, (ordered[i]->name().length()));
     }
     for (size_t i=0; i<ordered.size(); i++){
       if (ordered[i]->short_name()){
@@ -732,7 +728,7 @@ private:
         actual=read(value);
         has=true;
       }
-      catch(const std::exception &e){
+      catch(... /*const std::exception& e*/) {
         return false;
       }
       return true;

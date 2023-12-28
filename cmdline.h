@@ -362,13 +362,17 @@ public:
   }
 
   bool exist(const std::string &name) const {
-    if (options.count(name)==0) throw cmdline_error("there is no flag: --"+name);
-    return options.find(name)->second->has_set();
+    if (parser_options.count(name)==0) return false;
+    if (options.find(name)->second->must()) {
+        return options.find(name)->second->has_set();
+    }
+
+    return true;
   }
 
   template <class T>
   const T &get(const std::string &name) const {
-    if (options.count(name)==0) throw cmdline_error("there is no flag: --"+name);
+    if (parser_options.count(name)==0) throw cmdline_error("there is no flag: --"+name);
     const option_with_value<T> *p=dynamic_cast<const option_with_value<T>*>(options.find(name)->second);
     if (p==NULL) throw cmdline_error("type mismatch flag '"+name+"'");
     return p->get();
@@ -430,105 +434,114 @@ public:
     return parse(argc, &argv[0]);
   }
 
-  bool parse(int argc, const char * const argv[]){
-    errors.clear();
-    others.clear();
+  bool parse(int argc, const char* const argv[]) {
+      errors.clear();
+      others.clear();
 
-    if (argc<1){
-      errors.push_back("argument number must be longer than 0");
-      return false;
-    }
-    if (prog_name=="")
-      prog_name=argv[0];
-
-    std::map<char, std::string> lookup;
-    for (std::map<std::string, option_base*>::iterator p=options.begin();
-         p!=options.end(); p++){
-      if (p->first.length()==0) continue;
-      char initial=p->second->short_name();
-      if (initial){
-        if (lookup.count(initial)>0){
-          lookup[initial]="";
-          errors.push_back(std::string("short option '")+initial+"' is ambiguous");
+      if (argc < 1) {
+          errors.push_back("argument number must be longer than 0");
           return false;
-        }
-        else lookup[initial]=p->first;
       }
-    }
+      if (prog_name == "")
+          prog_name = argv[0];
 
-    for (int i=1; i<argc; i++){
-      if (strncmp(argv[i], "--", 2)==0){
-        const char *p=strchr(argv[i]+2, '=');
-        if (p){
-          std::string name(argv[i]+2, p);
-          std::string val(p+1);
-          set_option(name, val);
-        }
-        else{
-          std::string name(argv[i]+2);
-          if (options.count(name)==0){
-            errors.push_back("undefined option: --"+name);
-            continue;
+      std::map<char, std::string> lookup;
+      for (std::map<std::string, option_base*>::iterator p = options.begin();
+          p != options.end(); p++) {
+          if (p->first.length() == 0) continue;
+          char initial = p->second->short_name();
+          if (initial) {
+              if (lookup.count(initial) > 0) {
+                  lookup[initial] = "";
+                  errors.push_back(std::string("short option '") + initial + "' is ambiguous");
+                  return false;
+              }
+              else lookup[initial] = p->first;
           }
-          if (options[name]->has_value()){
-            if (i+1>=argc){
-              errors.push_back("option needs value: --"+name);
-              continue;
-            }
-            else{
-              i++;
-              set_option(name, argv[i]);
-            }
-          }
-          else{
-            set_option(name);
-          }
-        }
       }
-      else if (strncmp(argv[i], "-", 1)==0){
-        if (!argv[i][1]) continue;
-        char last=argv[i][1];
-        for (int j=2; argv[i][j]; j++){
-          last=argv[i][j];
-          if (lookup.count(argv[i][j-1])==0){
-            errors.push_back(std::string("undefined short option: -")+argv[i][j-1]);
-            continue;
+
+      for (int i = 1; i < argc; i++) {
+          if (strncmp(argv[i], "--", 2) == 0) {
+              const char* p = strchr(argv[i] + 2, '=');
+              if (p) {
+                  std::string name(argv[i] + 2, p);
+                  std::string val(p + 1);
+                  set_option(name, val);
+              }
+              else {
+                  std::string name(argv[i] + 2);
+                  if (options.count(name) == 0) {
+                      errors.push_back("undefined option: --" + name);
+                      continue;
+                  }
+                  if (options[name]->has_value()) {
+                      if (i + 1 >= argc) {
+                          errors.push_back("option needs value: --" + name);
+                          continue;
+                      }
+                      else {
+                          i++;
+                          set_option(name, argv[i]);
+                      }
+                  }
+                  else {
+                      set_option(name);
+                  }
+              }
           }
-          if (lookup[argv[i][j-1]]==""){
-            errors.push_back(std::string("ambiguous short option: -")+argv[i][j-1]);
-            continue;
+          else if (strncmp(argv[i], "-", 1) == 0) {
+              if (!argv[i][1]) continue;
+              char last = argv[i][1];
+              for (int j = 2; argv[i][j]; j++) {
+                  last = argv[i][j];
+                  if (lookup.count(argv[i][j - 1]) == 0) {
+                      errors.push_back(std::string("undefined short option: -") + argv[i][j - 1]);
+                      continue;
+                  }
+                  if (lookup[argv[i][j - 1]] == "") {
+                      errors.push_back(std::string("ambiguous short option: -") + argv[i][j - 1]);
+                      continue;
+                  }
+                  set_option(lookup[argv[i][j - 1]]);
+              }
+
+              if (lookup.count(last) == 0) {
+                  errors.push_back(std::string("undefined short option: -") + last);
+                  continue;
+              }
+              if (lookup[last] == "") {
+                  errors.push_back(std::string("ambiguous short option: -") + last);
+                  continue;
+              }
+
+              if (i + 1 < argc && options[lookup[last]]->has_value()) {
+                  //如果 i+1 == - 说明没有携带指定的参数值,外加判断-后面饿字符是否是数字 数字的话
+                  char* argv_next = (char *) argv[i + 1];
+                  char next_ch = *(argv_next + 1);
+                  if (strncmp(argv[i + 1], "-", 1) == 0 && (next_ch >= 'a' && next_ch <= 'z')) {
+                      set_option(lookup[last]);
+                  }
+                  else {
+                      set_option(lookup[last], argv[i + 1]);
+                      i++;
+                  }
+              }
+              else {
+                  set_option(lookup[last]);
+              }
           }
-          set_option(lookup[argv[i][j-1]]);
-        }
-
-        if (lookup.count(last)==0){
-          errors.push_back(std::string("undefined short option: -")+last);
-          continue;
-        }
-        if (lookup[last]==""){
-          errors.push_back(std::string("ambiguous short option: -")+last);
-          continue;
-        }
-
-        if (i+1<argc && options[lookup[last]]->has_value()){
-          set_option(lookup[last], argv[i+1]);
-          i++;
-        }
-        else{
-          set_option(lookup[last]);
-        }
+          else {
+              others.push_back(argv[i]);
+          }
       }
-      else{
-        others.push_back(argv[i]);
+
+      for (std::map<std::string, option_base*>::iterator p = options.begin(); p != options.end(); p++) {
+          if (!p->second->valid()) {
+              errors.push_back("need option: --" + std::string(p->first));
+          }
       }
-    }
 
-    for (std::map<std::string, option_base*>::iterator p=options.begin();
-         p!=options.end(); p++)
-      if (!p->second->valid())
-        errors.push_back("need option: --"+std::string(p->first));
-
-    return errors.size()==0;
+      return errors.size()==0;
   }
 
   void parse_check(const std::string &arg){
@@ -562,7 +575,7 @@ public:
 
   std::string usage() const {
     std::ostringstream oss;
-    oss<<"usage: "<<prog_name<<" ";
+    oss<<"Usage: "<<prog_name<<" ";
     for (size_t i=0; i<ordered.size(); i++){
       if (ordered[i]->must())
         oss<<ordered[i]->short_description()<<" ";
@@ -610,10 +623,14 @@ private:
       errors.push_back("undefined option: --"+name);
       return;
     }
-    if (!options[name]->set()){
-      errors.push_back("option needs value: --"+name);
-      return;
+
+    if (!options[name]->set() && options[name]->must()) {
+        errors.push_back("option needs value: --" + name);
+        return;
     }
+
+    //add by lehoon 2023-12-27 解析后的参数加入新的容器
+    parser_options.insert(std::pair<std::string, int>(name, 1));
   }
 
   void set_option(const std::string &name, const std::string &value){
@@ -621,10 +638,13 @@ private:
       errors.push_back("undefined option: --"+name);
       return;
     }
-    if (!options[name]->set(value)){
+    if (!options[name]->set(value) && options[name]->must()){
       errors.push_back("option value is invalid: --"+name+"="+value);
       return;
     }
+
+    //add by lehoon 2023-12-27 解析后的参数加入新的容器
+    parser_options.insert(std::pair<std::string, int>(name, 1));
   }
 
   class option_base{
@@ -706,10 +726,10 @@ private:
                       char short_name,
                       bool need,
                       const T &def,
-                      const std::string &desc)
-      : nam(name), snam(short_name), need(need), has(false)
+                      const std::string &desc1)
+      : nam(name), snam(short_name), need(need), has(false), desc(desc1)
       , def(def), actual(def) {
-      this->desc=full_description(desc);
+      //this->desc=full_description(desc);
     }
     ~option_with_value(){}
 
@@ -804,6 +824,8 @@ private:
   };
 
   std::map<std::string, option_base*> options;
+  //add by lehoon 2023-12-27 增加对可选参数的支持
+  std::map<std::string, int> parser_options;
   std::vector<option_base*> ordered;
   std::string ftr;
 
